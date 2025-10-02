@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>STM32 One-Click Flash</title>
+  <title>Canable-FW One-Click Flash For STM32F072</title>
 </head>
 <body>
   <h2>STM32 DFU One-Click Firmware Update</h2>
@@ -38,7 +38,7 @@
         await device.open();
 
         // Download firmware
-        const firmware = await getFirmware("firmware/latest.bin");
+        const firmware = await getFirmware("firmware/canable_fw.bin");
         const transferSize = 1024;  // typical max transfer size
         await device.do_download(transferSize, firmware, true);
 
