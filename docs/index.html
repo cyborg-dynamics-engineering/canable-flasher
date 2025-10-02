@@ -86,8 +86,9 @@
         alert("✅ Flashing complete!");
       } catch (err) {
         console.error(err);
-        logInfo("❌ Flashing failed: " + err.message);
-        alert("❌ Flashing failed: " + err.message);
+        const msg = (err && err.message) ? err.message : String(err);
+        logInfo("❌ Flashing failed: " + msg);
+        alert("❌ Flashing failed: " + msg);
       }
     });
   </script>
