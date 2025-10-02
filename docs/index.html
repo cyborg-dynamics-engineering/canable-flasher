@@ -13,18 +13,24 @@
       font-weight: bold;
     }
     progress {
-      width: 100%;
+      width: 300px;  /* limit width */
       height: 20px;
+      margin-bottom: 1em;
     }
   </style>
 </head>
 <body>
   <h2>STM32F072 DFU Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
+
   <div id="progressContainer">
-    <label for="flashProgress">Flashing progress:</label>
+    <label for="eraseProgress">Erase progress:</label>
+    <progress id="eraseProgress" value="0" max="100"></progress>
+
+    <label for="flashProgress">Flash progress:</label>
     <progress id="flashProgress" value="0" max="100"></progress>
   </div>
+
   <pre id="log"></pre>
 
   <!-- Load dependencies -->
@@ -34,7 +40,9 @@
 
   <script>
     const log = document.getElementById("log");
-    const progressBar = document.getElementById("flashProgress");
+    const eraseBar = document.getElementById("eraseProgress");
+    const flashBar = document.getElementById("flashProgress");
+
     function logInfo(msg) { log.textContent += msg + "\n"; }
 
     const deviceFilters = [{ vendorId: 0x0483, productId: 0xDF11 }];
@@ -79,7 +87,8 @@
     document.getElementById("flashBtn").addEventListener("click", async () => {
       try {
         log.textContent = "Requesting device...\n";
-        progressBar.value = 0;
+        eraseBar.value = 0;
+        flashBar.value = 0;
 
         const selectedDevice = await navigator.usb.requestDevice({ filters: deviceFilters });
         let interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
@@ -114,10 +123,16 @@
           throw new Error("No memory map available");
         }
 
-        // Progress callback updates bar
+        // Custom progress handler: first pass = erase, second pass = flash
+        let pass = 0;
         device.logProgress = (done, total) => {
           const percent = Math.floor((done / total) * 100);
-          progressBar.value = percent;
+          if (pass === 0) {
+            eraseBar.value = percent;
+            if (percent >= 100) pass = 1; // move to flash stage
+          } else {
+            flashBar.value = percent;
+          }
         };
 
         const firmware = await getFirmware("firmware/canable_fw.bin");
@@ -126,7 +141,9 @@
         logInfo("Flashing...");
         await device.do_download(transferSize, firmware, true);
 
-        progressBar.value = 100;
+        eraseBar.value = 100;
+        flashBar.value = 100;
+
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
       } catch (err) {
