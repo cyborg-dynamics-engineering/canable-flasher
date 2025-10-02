@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>STM32 One-Click Flash</title>
+</head>
+<body>
+  <h2>STM32 DFU One-Click Firmware Update</h2>
+  <button id="flashBtn">Flash STM32</button>
+
+  <!-- Load DFU scripts (from your repo) -->
+  <script src="dfu.js"></script>
+  <script src="dfuse.js"></script>
+
+  <script>
+    const deviceFilters = [
+      { vendorId: 0x0483, productId: 0xDF11 } // STMicroelectronics DFU
+    ];
+
+    async function getFirmware(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Firmware download failed");
+      return new Uint8Array(await response.arrayBuffer());
+    }
+
+    document.getElementById("flashBtn").addEventListener("click", async () => {
+      try {
+        const device = await navigator.usb.requestDevice({ filters: deviceFilters });
+        await device.open();
+
+        if (device.configuration === null) {
+          await device.selectConfiguration(1);
+        }
+        await device.claimInterface(0);
+
+        // Now WebDFU is available as global
+        const dfu = new WebDFU(device, { forceInterfacesName: true });
+        await dfu.init();
+
+        const firmware = await getFirmware("firmware/canable-fw.bin");
+        await dfu.do_download(0x08000000, firmware);
+
+        alert("✅ Flashing complete!");
+      } catch (err) {
+        console.error(err);
+        alert("❌ Flashing failed: " + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
