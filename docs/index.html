@@ -46,6 +46,26 @@
       return {};
     }
 
+    async function fixInterfaceNames(device_, interfaces) {
+      // Only needed if interface names are missing
+      if (interfaces.some(intf => intf.name == null)) {
+        let tempDevice = new dfu.Device(device_, interfaces[0]);
+        await tempDevice.device_.open();
+        await tempDevice.device_.selectConfiguration(1);
+        let mapping = await tempDevice.readInterfaceNames();
+        await tempDevice.close();
+
+        for (let intf of interfaces) {
+          if (intf.name === null) {
+            let configIndex = intf.configuration.configurationValue;
+            let intfNumber = intf["interface"].interfaceNumber;
+            let alt = intf.alternate.alternateSetting;
+            intf.name = mapping[configIndex][intfNumber][alt];
+          }
+        }
+      }
+    }
+
     document.getElementById("flashBtn").addEventListener("click", async () => {
       try {
         log.textContent = "Requesting device...\n";
@@ -54,7 +74,7 @@
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
         // Ensure interface names are read (so memory map is available)
-        await dfu.fixInterfaceNames(selectedDevice, interfaces);
+        await fixInterfaceNames(selectedDevice, interfaces);
 
         // Force pick the Internal Flash interface (alt=0)
         const flashIntf = interfaces.find(intf => intf.alternate.alternateSetting === 0);
