@@ -3,24 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <title>STM32F072 One-Click Flash</title>
+  <style>
+    #progressContainer {
+      margin-top: 1em;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.3em;
+      font-weight: bold;
+    }
+    progress {
+      width: 100%;
+      height: 20px;
+    }
+  </style>
 </head>
 <body>
   <h2>STM32F072 DFU Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
+  <div id="progressContainer">
+    <label for="flashProgress">Flashing progress:</label>
+    <progress id="flashProgress" value="0" max="100"></progress>
+  </div>
   <pre id="log"></pre>
 
-  <!-- Load dependencies (order matters) -->
+  <!-- Load dependencies -->
   <script src="dfu.js"></script>
   <script src="dfuse.js"></script>
   <script src="dfu-util.js"></script>
 
   <script>
     const log = document.getElementById("log");
+    const progressBar = document.getElementById("flashProgress");
     function logInfo(msg) { log.textContent += msg + "\n"; }
 
-    const deviceFilters = [
-      { vendorId: 0x0483, productId: 0xDF11 } // STMicroelectronics DFU
-    ];
+    const deviceFilters = [{ vendorId: 0x0483, productId: 0xDF11 }];
 
     async function getFirmware(url) {
       const response = await fetch(url);
@@ -34,27 +51,20 @@
         const configDesc = dfu.parseConfigurationDescriptor(data);
         for (const desc of configDesc.descriptors) {
           if (desc.bDescriptorType === 0x21 && desc.hasOwnProperty("bcdDFUVersion")) {
-            return { 
-              TransferSize: desc.wTransferSize,
-              DFUVersion: desc.bcdDFUVersion
-            };
+            return { TransferSize: desc.wTransferSize, DFUVersion: desc.bcdDFUVersion };
           }
         }
-      } catch (e) {
-        console.warn("Failed to read DFU descriptor:", e);
-      }
+      } catch (e) { console.warn("Failed to read DFU descriptor:", e); }
       return {};
     }
 
     async function fixInterfaceNames(device_, interfaces) {
-      // Only needed if interface names are missing
       if (interfaces.some(intf => intf.name == null)) {
         let tempDevice = new dfu.Device(device_, interfaces[0]);
         await tempDevice.device_.open();
         await tempDevice.device_.selectConfiguration(1);
         let mapping = await tempDevice.readInterfaceNames();
         await tempDevice.close();
-
         for (let intf of interfaces) {
           if (intf.name === null) {
             let configIndex = intf.configuration.configurationValue;
@@ -69,34 +79,30 @@
     document.getElementById("flashBtn").addEventListener("click", async () => {
       try {
         log.textContent = "Requesting device...\n";
+        progressBar.value = 0;
+
         const selectedDevice = await navigator.usb.requestDevice({ filters: deviceFilters });
         let interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
-        // Ensure interface names are read (so memory map is available)
         await fixInterfaceNames(selectedDevice, interfaces);
 
-        // Force pick the Internal Flash interface (alt=0)
         const flashIntf = interfaces.find(intf => intf.alternate.alternateSetting === 0);
         if (!flashIntf) throw new Error("No Internal Flash DFU interface found");
 
-        // Wrap in dfuse.Device
         let device = new dfuse.Device(selectedDevice, flashIntf);
         await device.open();
 
-        // Get DFU descriptor info
         const desc = await getDFUDescriptorProperties(device);
         const transferSize = desc.TransferSize || 1024;
         logInfo(`Transfer size: ${transferSize}`);
 
-        // Always clear error state if needed
         let status = await device.getStatus();
         if (status.state === dfu.dfuERROR) {
           await device.clearStatus();
           logInfo("Cleared DFU error state");
         }
 
-        // Use memory map if present
         if (device.memoryInfo) {
           const seg = device.getFirstWritableSegment();
           if (seg) {
@@ -105,23 +111,22 @@
             logInfo(`Start address: 0x${seg.start.toString(16)}`);
           }
         } else {
-          throw new Error("No memory map available (even after fixInterfaceNames)");
+          throw new Error("No memory map available");
         }
 
-        // Set progress callback
+        // Progress callback updates bar
         device.logProgress = (done, total) => {
           const percent = Math.floor((done / total) * 100);
-          logInfo(`Progress: ${percent}%`);
+          progressBar.value = percent;
         };
 
-        // Load firmware
         const firmware = await getFirmware("firmware/canable_fw.bin");
         logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
 
-        // Flash firmware
         logInfo("Flashing...");
         await device.do_download(transferSize, firmware, true);
 
+        progressBar.value = 100;
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
       } catch (err) {
