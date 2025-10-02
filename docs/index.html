@@ -53,8 +53,12 @@
         const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
-        // Open as base DFU device
-        let device = new dfu.Device(selectedDevice, interfaces[0]);
+        // Force pick the Internal Flash interface (alt=0)
+        const flashIntf = interfaces.find(intf => intf.alternate.alternateSetting === 0);
+        if (!flashIntf) throw new Error("No Internal Flash DFU interface found");
+
+        // Wrap in dfuse.Device
+        let device = new dfuse.Device(selectedDevice, flashIntf);
         await device.open();
 
         // Get DFU descriptor info
@@ -62,14 +66,23 @@
         const transferSize = desc.TransferSize || 1024;
         logInfo(`Transfer size: ${transferSize}`);
 
-        // If device is DfuSe-capable and in DFU mode, wrap as dfuse.Device
-        if (desc.DFUVersion === 0x011a && device.settings.alternate.interfaceProtocol === 0x02) {
-          device = new dfuse.Device(device.device_, device.settings);
-          logInfo("Using DfuSe device wrapper");
+        // Always clear error state if needed
+        let status = await device.getStatus();
+        if (status.state === dfu.dfuERROR) {
+          await device.clearStatus();
+          logInfo("Cleared DFU error state");
         }
 
-        // If no memory map, force start address
-        if (!device.memoryInfo) {
+        // Use memory map if present
+        if (device.memoryInfo) {
+          const seg = device.getFirstWritableSegment();
+          if (seg) {
+            device.startAddress = seg.start;
+            logInfo(`Selected memory region: ${device.memoryInfo.name}`);
+            logInfo(`Start address: 0x${seg.start.toString(16)}`);
+          }
+        } else {
+          // Fallback if somehow no map
           device.startAddress = 0x08000000;
           logInfo("No memory map, forcing start address 0x08000000");
         }
@@ -86,23 +99,7 @@
 
         // Flash firmware
         logInfo("Flashing...");
-        // Always clear error state
-        let status = await device.getStatus();
-        if (status.state === dfu.dfuERROR) {
-          await device.clearStatus();
-          logInfo("Cleared DFU error state");
-        }
-
-        device.startAddress = 0x08000000;
-        logInfo("Forcing start address 0x08000000");
-        await device.dfuseCommand(0x21, device.startAddress, 4);
-
-        // Flash firmware using dfuse.Device logic
-        logInfo("Flashing...");
-        await dfuse.Device.prototype.do_download.call(device, transferSize, firmware, true);
-
-        logInfo("✅ Flashing complete!");
-        alert("✅ Flashing complete!");
+        await device.do_download(transferSize, firmware, true);
 
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
