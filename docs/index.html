@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>STM32 One-Click Flash</title>
+  <title>STM32F072 One-Click Flash</title>
 </head>
 <body>
-  <h2>STM32 DFU One-Click Firmware Update</h2>
+  <h2>STM32F072 DFU Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
   <pre id="log"></pre>
 
-  <!-- Load dependencies from webdfu repo (order matters) -->
+  <!-- Load dependencies (order matters) -->
   <script src="dfu.js"></script>
   <script src="dfuse.js"></script>
   <script src="dfu-util.js"></script>
@@ -50,16 +50,17 @@
         const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
-        const device = new dfuse.Device(selectedDevice, interfaces[0]);
+        // Use plain DFU device (not dfuse)
+        const device = new dfu.Device(selectedDevice, interfaces[0]);
         await device.open();
 
-        // Set up progress callback
+        // Progress callback
         device.logProgress = (done, total) => {
           const percent = Math.floor((done / total) * 100);
           logInfo(`Progress: ${percent}%`);
         };
 
-        // Get DFU descriptor for transfer size
+        // Read transfer size from DFU descriptor
         const desc = await getDFUDescriptorProperties(device);
         const transferSize = desc.TransferSize || 1024;
         logInfo(`Transfer size: ${transferSize}`);
@@ -68,10 +69,8 @@
         const firmware = await getFirmware("firmware/canable_fw.bin");
         logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
 
-        // Force address
-        device.startAddress = 0x08000000;
-
-        logInfo("Flashing (no SET_ADDRESS, plain DFU)...");
+        // Flash firmware (STM32F072 DFU always starts at 0x08000000)
+        logInfo("Flashing...");
         await device.do_download(transferSize, firmware, true);
 
         logInfo("✅ Flashing complete!");
