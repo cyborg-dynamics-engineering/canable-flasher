@@ -50,8 +50,11 @@
       try {
         log.textContent = "Requesting device...\n";
         const selectedDevice = await navigator.usb.requestDevice({ filters: deviceFilters });
-        const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
+        let interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
+
+        // Ensure interface names are read (so memory map is available)
+        await dfu.fixInterfaceNames(selectedDevice, interfaces);
 
         // Force pick the Internal Flash interface (alt=0)
         const flashIntf = interfaces.find(intf => intf.alternate.alternateSetting === 0);
@@ -82,9 +85,7 @@
             logInfo(`Start address: 0x${seg.start.toString(16)}`);
           }
         } else {
-          // Fallback if somehow no map
-          device.startAddress = 0x08000000;
-          logInfo("No memory map, forcing start address 0x08000000");
+          throw new Error("No memory map available (even after fixInterfaceNames)");
         }
 
         // Set progress callback
