@@ -98,7 +98,7 @@
 
         // Flash firmware using dfuse.Device logic
         logInfo("Flashing...");
-        await device.do_download(transferSize, firmware, true);
+        await dfuse.Device.prototype.do_download.call(device, transferSize, firmware, true);
 
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
