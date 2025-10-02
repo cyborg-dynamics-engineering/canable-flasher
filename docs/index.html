@@ -93,7 +93,13 @@
 
         // Flash firmware
         logInfo("Flashing...");
-        await device.do_download(transferSize, firmware, true);
+        if (!device.memoryInfo) {
+          device.startAddress = 0x08000000;
+          logInfo("No memory map → falling back to base DFU do_download()");
+          await dfu.Device.prototype.do_download.call(device, transferSize, firmware, true, 2);
+        } else {
+          await device.do_download(transferSize, firmware, true);
+        }
 
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
