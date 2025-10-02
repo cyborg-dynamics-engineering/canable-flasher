@@ -55,7 +55,7 @@
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
         // Wrap as dfuse.Device to get memory map if available
-        const device = new dfuse.Device(selectedDevice, interfaces[0]);
+        const device = new dfu.Device(selectedDevice, interfaces[0]);
         await device.open();
 
         // Get DFU functional descriptor (transfer size)
