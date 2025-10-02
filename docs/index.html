@@ -93,6 +93,12 @@
 
         // Flash firmware
         logInfo("Flashing...");
+        // Always clear error state if needed
+        status = await device.getStatus();
+        if (status.state === dfu.dfuERROR) {
+          await device.clearStatus();
+          logInfo("Cleared DFU error state");
+        }
         if (!device.memoryInfo) {
           device.startAddress = 0x08000000;
           logInfo("No memory map → falling back to base DFU do_download()");
