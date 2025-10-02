@@ -75,7 +75,7 @@
         }
 
         // Fetch firmware
-        const firmware = await getFirmware("firmware/latest.bin");
+        const firmware = await getFirmware("firmware/canable_fw.bin");
         logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
 
         // Flash to device
