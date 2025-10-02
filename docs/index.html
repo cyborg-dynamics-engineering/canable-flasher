@@ -19,7 +19,7 @@
     function logInfo(msg) { log.textContent += msg + "\n"; }
 
     const deviceFilters = [
-      { vendorId: 0x0483, productId: 0xDF11 } // STM32 in DFU mode
+      { vendorId: 0x0483, productId: 0xDF11 } // STMicroelectronics DFU
     ];
 
     async function getFirmware(url) {
@@ -29,16 +29,12 @@
     }
 
     async function getDFUDescriptorProperties(device) {
-      // Read DFU functional descriptor
       try {
         const data = await device.readConfigurationDescriptor(0);
         const configDesc = dfu.parseConfigurationDescriptor(data);
         for (const desc of configDesc.descriptors) {
           if (desc.bDescriptorType === 0x21 && desc.hasOwnProperty("bcdDFUVersion")) {
-            return {
-              TransferSize: desc.wTransferSize,
-              DFUVersion: desc.bcdDFUVersion
-            };
+            return { TransferSize: desc.wTransferSize };
           }
         }
       } catch (e) {
@@ -54,31 +50,33 @@
         const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
-        // Wrap as dfuse.Device to get memory map if available
         const device = new dfuse.Device(selectedDevice, interfaces[0]);
         await device.open();
 
-        // Get DFU functional descriptor (transfer size)
+        // Set up progress callback
+        device.logProgress = (done, total) => {
+          const percent = Math.floor((done / total) * 100);
+          logInfo(`Progress: ${percent}%`);
+        };
+
+        // Get DFU descriptor for transfer size
         const desc = await getDFUDescriptorProperties(device);
         const transferSize = desc.TransferSize || 1024;
         logInfo(`Transfer size: ${transferSize}`);
 
-        // Fetch firmware
+        // Load firmware
         const firmware = await getFirmware("firmware/canable_fw.bin");
         logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
 
-        // If STM32 DfuSe, get memory map and max upload size
-        let uploadSize;
-        if (!device.memoryInfo) {
-          device.startAddress = 0x08000000;
-          logInfo("Forcing start address 0x08000000");
+        // Force address
+        device.startAddress = 0x08000000;
+        logInfo("Setting address 0x08000000...");
 
-          // Use base dfu.Device implementation
-          await dfu.Device.prototype.do_download.call(device, transferSize, firmware, true, 2);
-        } else {
-          // Normal dfuse implementation
-          await device.do_download(transferSize, firmware, true);
-        }
+        await device.dfuseCommand(0x21, 0x08000000, 4);
+
+        // Flash using generic dfu.Device implementation
+        logInfo("Flashing...");
+        await dfu.Device.prototype.do_download.call(device, transferSize, firmware, true, 2);
 
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
