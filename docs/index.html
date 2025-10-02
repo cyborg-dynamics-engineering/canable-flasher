@@ -2,20 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Canable-FW One-Click Flash For STM32F072</title>
+  <title>STM32 One-Click Flash</title>
 </head>
 <body>
   <h2>STM32 DFU One-Click Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
+  <pre id="log"></pre>
 
-  <!-- Load dependencies (order matters) -->
+  <!-- Load dependencies from webdfu repo (order matters) -->
   <script src="dfu.js"></script>
   <script src="dfuse.js"></script>
   <script src="dfu-util.js"></script>
 
   <script>
+    const log = document.getElementById("log");
+    function logInfo(msg) { log.textContent += msg + "\n"; }
+
     const deviceFilters = [
-      { vendorId: 0x0483, productId: 0xDF11 } // STM32 DFU
+      { vendorId: 0x0483, productId: 0xDF11 } // STM32 in DFU mode
     ];
 
     async function getFirmware(url) {
@@ -24,27 +28,65 @@
       return new Uint8Array(await response.arrayBuffer());
     }
 
+    async function getDFUDescriptorProperties(device) {
+      // Read DFU functional descriptor
+      try {
+        const data = await device.readConfigurationDescriptor(0);
+        const configDesc = dfu.parseConfigurationDescriptor(data);
+        for (const desc of configDesc.descriptors) {
+          if (desc.bDescriptorType === 0x21 && desc.hasOwnProperty("bcdDFUVersion")) {
+            return {
+              TransferSize: desc.wTransferSize,
+              DFUVersion: desc.bcdDFUVersion
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to read DFU descriptor:", e);
+      }
+      return {};
+    }
+
     document.getElementById("flashBtn").addEventListener("click", async () => {
       try {
-        // Ask Chrome for the STM32 DFU device
+        log.textContent = "Requesting device...\n";
         const selectedDevice = await navigator.usb.requestDevice({ filters: deviceFilters });
         const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
-        if (interfaces.length === 0) {
-          throw new Error("No DFU interfaces found");
-        }
+        if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
-        // Wrap as dfu.Device (or dfuse.Device if STM32 DfuSe)
-        const device = new dfu.Device(selectedDevice, interfaces[0]);
+        // Wrap as dfuse.Device to get memory map if available
+        const device = new dfuse.Device(selectedDevice, interfaces[0]);
         await device.open();
 
-        // Download firmware
-        const firmware = await getFirmware("firmware/canable_fw.bin");
-        const transferSize = 1024;  // typical max transfer size
+        // Get DFU functional descriptor (transfer size)
+        const desc = await getDFUDescriptorProperties(device);
+        const transferSize = desc.TransferSize || 1024;
+        logInfo(`Transfer size: ${transferSize}`);
+
+        // If STM32 DfuSe, get memory map and max upload size
+        let uploadSize;
+        if (device.memoryInfo) {
+          const segment = device.getFirstWritableSegment();
+          if (segment) {
+            uploadSize = device.getMaxReadSize(segment.start);
+            device.startAddress = segment.start;
+            logInfo(`Flash segment: ${segment.name}, size ${uploadSize} bytes`);
+          }
+        }
+
+        // Fetch firmware
+        const firmware = await getFirmware("firmware/latest.bin");
+        logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
+
+        // Flash to device
+        logInfo("Flashing...");
         await device.do_download(transferSize, firmware, true);
 
+        logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
       } catch (err) {
         console.error(err);
+        logInfo("❌ Flashing failed: " + err.message);
         alert("❌ Flashing failed: " + err.message);
       }
     });
