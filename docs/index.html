@@ -8,13 +8,14 @@
   <h2>STM32 DFU One-Click Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
 
-  <!-- Load DFU scripts (from your repo) -->
-  <script src="dfu.js"></script>
+  <!-- Include dependencies from the webdfu repo -->
   <script src="dfuse.js"></script>
+  <script src="dfu.js"></script>
+  <script src="dfu-util.js"></script>
 
   <script>
     const deviceFilters = [
-      { vendorId: 0x0483, productId: 0xDF11 } // STMicroelectronics DFU
+      { vendorId: 0x0483, productId: 0xDF11 }
     ];
 
     async function getFirmware(url) {
@@ -33,11 +34,11 @@
         }
         await device.claimInterface(0);
 
-        // Now WebDFU is available as global
+        // WebDFU comes from dfu-util.js
         const dfu = new WebDFU(device, { forceInterfacesName: true });
         await dfu.init();
 
-        const firmware = await getFirmware("firmware/canable-fw.bin");
+        const firmware = await getFirmware("firmware/latest.bin");
         await dfu.do_download(0x08000000, firmware);
 
         alert("✅ Flashing complete!");
