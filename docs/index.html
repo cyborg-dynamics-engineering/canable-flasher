@@ -63,6 +63,10 @@
         const transferSize = desc.TransferSize || 1024;
         logInfo(`Transfer size: ${transferSize}`);
 
+        // Fetch firmware
+        const firmware = await getFirmware("firmware/canable_fw.bin");
+        logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
+
         // If STM32 DfuSe, get memory map and max upload size
         let uploadSize;
         if (!device.memoryInfo) {
@@ -75,14 +79,6 @@
           // Normal dfuse implementation
           await device.do_download(transferSize, firmware, true);
         }
-
-        // Fetch firmware
-        const firmware = await getFirmware("firmware/canable_fw.bin");
-        logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
-
-        // Flash to device
-        logInfo("Flashing...");
-        await device.do_download(transferSize, firmware, true);
 
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
