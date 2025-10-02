@@ -70,13 +70,9 @@
 
         // Force address
         device.startAddress = 0x08000000;
-        logInfo("Setting address 0x08000000...");
 
-        await device.dfuseCommand(0x21, 0x08000000, 4);
-
-        // Flash using generic dfu.Device implementation
-        logInfo("Flashing...");
-        await dfu.Device.prototype.do_download.call(device, transferSize, firmware, true, 2);
+        logInfo("Flashing (no SET_ADDRESS, plain DFU)...");
+        await device.do_download(transferSize, firmware, true);
 
         logInfo("✅ Flashing complete!");
         alert("✅ Flashing complete!");
