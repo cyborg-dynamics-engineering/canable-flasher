@@ -95,6 +95,7 @@
 
         device.startAddress = 0x08000000;
         logInfo("Forcing start address 0x08000000");
+        await device.dfuseCommand(0x21, device.startAddress, 4);
 
         // Flash firmware using dfuse.Device logic
         logInfo("Flashing...");
