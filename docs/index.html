@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>STM32F072 Canable Flasher</title>
+  <style>
+    #progressContainer {
+      margin-top: 1em;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.3em;
+      font-weight: bold;
+    }
+    progress {
+      width: 300px;  /* limit width */
+      height: 20px;
+      margin-bottom: 1em;
+    }
+    /* Style header with logo */
+    #header {
+    display: flex;          /* place children side by side */
+    align-items: center;    /* vertically align logo with text */
+    gap: 10px;              /* spacing between text and logo */
+    margin-top: .25em;             /* remove default margins */
+    margin-bottom: .25em;             /* remove default margins */
+    }
+    #titleBlock {
+      display: flex;
+      flex-direction: column;     /* keep h2 and h3 stacked */
+    }
+    #logo {
+      height: 60px;    /* adjust size as needed */
+      width: auto;
+    }
+    #titleBlock h2 {
+      margin-top: 0;             /* remove default margins */
+      margin-bottom: 0;
+    }
+    #titleBlock h3 {
+      margin-top: .5em;             /* remove default margins */
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <div id="titleBlock">
+      <h2>STM32F072 Canable Flasher</h2>
+      <h3>By Cyborg Dynamics Engineering</h3>
+    </div>
+    <img src="res/Logo.png" alt="Logo" id="logo">
+  </div>
+
+  <p class="text">
+    This tool flashes the <code>canable-fw.bin</code> file from candleLight-fw v2.0, 
+    available at: <br>
+    <a href="https://github.com/candle-usb/candleLight_fw/releases/tag/v2.0" target="_blank">
+      https://github.com/candle-usb/candleLight_fw/releases/tag/v2.0
+    </a><br><br>
+    <b>Note: For reliable operation, please use Google Chrome. WebUSB is not consistently
+      supported in other browsers.</b>
+  </p>
+
+  <button id="flashBtn">Flash STM32</button>
+
+  <div id="progressContainer">
+    <label for="eraseProgress">Erase progress:</label>
+    <progress id="eraseProgress" value="0" max="100"></progress>
+
+    <label for="flashProgress">Flash progress:</label>
+    <progress id="flashProgress" value="0" max="100"></progress>
+  </div>
+
+  <pre id="log"></pre>
+
+  <!-- Disclaimer -->
+  <p class="text">
+    Disclaimer: This tool is provided “as is” without warranty of any kind. 
+    Cyborg Dynamics Engineering assumes no liability or responsibility for any 
+    damages or issues arising from its use. Use at your own risk.
+  </p>
+
+  <p class="text">
+    <b>Powered by <a href="https://github.com/devanlai/webdfu" target="_blank">webdfu</a>
+  </p></b>
+
+  <style>
+    .text {
+      margin-top: 1em;
+      text-align: left;    /* left-align text */
+      max-width: 35em;
+    }
+  </style>
+
+  <!-- Load dependencies -->
+  <script src="dfu.js"></script>
+  <script src="dfuse.js"></script>
+  <script src="dfu-util.js"></script>
+
+  <script>
+    const log = document.getElementById("log");
+    const eraseBar = document.getElementById("eraseProgress");
+    const flashBar = document.getElementById("flashProgress");
+
+    function logInfo(msg) { log.textContent += msg + "\n"; }
+
+    const deviceFilters = [{ vendorId: 0x0483, productId: 0xDF11 }];
+
+    async function getFirmware(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Firmware download failed");
+      return new Uint8Array(await response.arrayBuffer());
+    }
+
+    async function getDFUDescriptorProperties(device) {
+      try {
+        const data = await device.readConfigurationDescriptor(0);
+        const configDesc = dfu.parseConfigurationDescriptor(data);
+        for (const desc of configDesc.descriptors) {
+          if (desc.bDescriptorType === 0x21 && desc.hasOwnProperty("bcdDFUVersion")) {
+            return { TransferSize: desc.wTransferSize, DFUVersion: desc.bcdDFUVersion };
+          }
+        }
+      } catch (e) { console.warn("Failed to read DFU descriptor:", e); }
+      return {};
+    }
+
+    async function fixInterfaceNames(device_, interfaces) {
+      if (interfaces.some(intf => intf.name == null)) {
+        let tempDevice = new dfu.Device(device_, interfaces[0]);
+        await tempDevice.device_.open();
+        await tempDevice.device_.selectConfiguration(1);
+        let mapping = await tempDevice.readInterfaceNames();
+        await tempDevice.close();
+        for (let intf of interfaces) {
+          if (intf.name === null) {
+            let configIndex = intf.configuration.configurationValue;
+            let intfNumber = intf["interface"].interfaceNumber;
+            let alt = intf.alternate.alternateSetting;
+            intf.name = mapping[configIndex][intfNumber][alt];
+          }
+        }
+      }
+    }
+
+    document.getElementById("flashBtn").addEventListener("click", async () => {
+      try {
+        log.textContent = "Requesting device...\n";
+        eraseBar.value = 0;
+        flashBar.value = 0;
+
+        const selectedDevice = await navigator.usb.requestDevice({ filters: deviceFilters });
+        let interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
+        if (interfaces.length === 0) throw new Error("No DFU interfaces found");
+
+        await fixInterfaceNames(selectedDevice, interfaces);
+
+        const flashIntf = interfaces.find(intf => intf.alternate.alternateSetting === 0);
+        if (!flashIntf) throw new Error("No Internal Flash DFU interface found");
+
+        let device = new dfuse.Device(selectedDevice, flashIntf);
+        await device.open();
+
+        const desc = await getDFUDescriptorProperties(device);
+        const transferSize = desc.TransferSize || 1024;
+        logInfo(`Transfer size: ${transferSize}`);
+
+        let status = await device.getStatus();
+        if (status.state === dfu.dfuERROR) {
+          await device.clearStatus();
+          logInfo("Cleared DFU error state");
+        }
+
+        if (device.memoryInfo) {
+          const seg = device.getFirstWritableSegment();
+          if (seg) {
+            device.startAddress = seg.start;
+            logInfo(`Selected memory region: ${device.memoryInfo.name}`);
+            logInfo(`Start address: 0x${seg.start.toString(16)}`);
+          }
+        } else {
+          throw new Error("No memory map available");
+        }
+
+        // Custom progress handler: first pass = erase, second pass = flash
+        let pass = 0;
+        device.logProgress = (done, total) => {
+          const percent = Math.floor((done / total) * 100);
+          if (pass === 0) {
+            eraseBar.value = percent;
+            if (percent >= 100) pass = 1; // move to flash stage
+          } else {
+            flashBar.value = percent;
+          }
+        };
+
+        const firmware = await getFirmware("firmware/canable_fw.bin");
+        logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
+
+        logInfo("Flashing...");
+        await device.do_download(transferSize, firmware, true);
+
+        eraseBar.value = 100;
+        flashBar.value = 100;
+
+        logInfo("✅ Flashing complete!");
+        alert("✅ Flashing complete!");
+      } catch (err) {
+        console.error(err);
+        const msg = (err && err.message) ? err.message : String(err);
+        logInfo("❌ Flashing failed: " + msg);
+        alert("❌ Flashing failed: " + msg);
+      }
+    });
+  </script>
+</body>
+</html>
