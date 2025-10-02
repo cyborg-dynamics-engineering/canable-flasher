@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>STM32 One-Click Flash</title>
+  <title>STM32F072 One-Click Flash</title>
 </head>
 <body>
-  <h2>STM32 DFU One-Click Firmware Update</h2>
+  <h2>STM32F072 DFU Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
   <pre id="log"></pre>
 
-  <!-- Load dependencies from webdfu repo (order matters) -->
+  <!-- Load dependencies (order matters) -->
   <script src="dfu.js"></script>
   <script src="dfuse.js"></script>
   <script src="dfu-util.js"></script>
@@ -34,7 +34,10 @@
         const configDesc = dfu.parseConfigurationDescriptor(data);
         for (const desc of configDesc.descriptors) {
           if (desc.bDescriptorType === 0x21 && desc.hasOwnProperty("bcdDFUVersion")) {
-            return { TransferSize: desc.wTransferSize };
+            return { 
+              TransferSize: desc.wTransferSize,
+              DFUVersion: desc.bcdDFUVersion
+            };
           }
         }
       } catch (e) {
@@ -50,38 +53,46 @@
         const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
         if (interfaces.length === 0) throw new Error("No DFU interfaces found");
 
-        const device = new dfuse.Device(selectedDevice, interfaces[0]);
+        // Open as base DFU device
+        let device = new dfu.Device(selectedDevice, interfaces[0]);
         await device.open();
 
-        // Set up progress callback
+        // Get DFU descriptor info
+        const desc = await getDFUDescriptorProperties(device);
+        const transferSize = desc.TransferSize || 1024;
+        logInfo(`Transfer size: ${transferSize}`);
+
+        // If device is DfuSe-capable and in DFU mode, wrap as dfuse.Device
+        if (desc.DFUVersion === 0x011a && device.settings.alternate.interfaceProtocol === 0x02) {
+          device = new dfuse.Device(device.device_, device.settings);
+          logInfo("Using DfuSe device wrapper");
+        }
+
+        // Always clear error state if needed
+        let status = await device.getStatus();
+        if (status.state === dfu.dfuERROR) {
+          await device.clearStatus();
+          logInfo("Cleared DFU error state");
+        }
+
+        // If no memory map, force start address
+        if (!device.memoryInfo) {
+          device.startAddress = 0x08000000;
+          logInfo("No memory map, forcing start address 0x08000000");
+        }
+
+        // Set progress callback
         device.logProgress = (done, total) => {
           const percent = Math.floor((done / total) * 100);
           logInfo(`Progress: ${percent}%`);
         };
 
-        // Get DFU descriptor for transfer size
-        const desc = await getDFUDescriptorProperties(device);
-
-        if (desc.DFUVersion == 0x011a && device.settings.alternate.interfaceProtocol == 0x02) {
-            device = new dfuse.Device(device.device_, device.settings);
-        }
-        
-        const transferSize = desc.TransferSize || 1024;
-        logInfo(`Transfer size: ${transferSize}`);
-
         // Load firmware
         const firmware = await getFirmware("firmware/canable_fw.bin");
         logInfo(`Firmware loaded (${firmware.byteLength} bytes)`);
 
-        // Force address
-        device.startAddress = 0x08000000;
-
-        let status = await device.getStatus();
-        if (status.state == dfu.dfuERROR) {
-            await device.clearStatus();
-        }
-
-        logInfo("Flashing (no SET_ADDRESS, plain DFU)...");
+        // Flash firmware
+        logInfo("Flashing...");
         await device.do_download(transferSize, firmware, true);
 
         logInfo("✅ Flashing complete!");
