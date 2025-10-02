@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>STM32F072 One-Click Flash</title>
+  <title>STM32F072 Canable Flasher</title>
   <style>
     #progressContainer {
       margin-top: 1em;
@@ -17,10 +17,50 @@
       height: 20px;
       margin-bottom: 1em;
     }
+    /* Style header with logo */
+    #header {
+    display: flex;          /* place children side by side */
+    align-items: center;    /* vertically align logo with text */
+    gap: 10px;              /* spacing between text and logo */
+    margin-top: .25em;             /* remove default margins */
+    margin-bottom: .25em;             /* remove default margins */
+    }
+    #titleBlock {
+      display: flex;
+      flex-direction: column;     /* keep h2 and h3 stacked */
+    }
+    #logo {
+      height: 60px;    /* adjust size as needed */
+      width: auto;
+    }
+    #titleBlock h2 {
+      margin-top: 0;             /* remove default margins */
+      margin-bottom: 0;
+    }
+    #titleBlock h3 {
+      margin-top: .5em;             /* remove default margins */
+      margin-bottom: 0;
+    }
   </style>
 </head>
 <body>
-  <h2>STM32F072 DFU Firmware Update</h2>
+  <div id="header">
+    <div id="titleBlock">
+      <h2>STM32F072 Canable Flasher</h2>
+      <h3>By Cyborg Dynamics Engineering</h3>
+    </div>
+    <img src="res/Logo.png" alt="Logo" id="logo">
+  </div>
+
+  <p class="text">
+    This tool flashes the <code>canable-fw.bin</code> file from candleLight-fw v2.0, 
+    available at: <br>
+    <a href="https://github.com/candle-usb/candleLight_fw/releases/tag/v2.0" target="_blank">
+      https://github.com/candle-usb/candleLight_fw/releases/tag/v2.0
+    </a><br><br>
+    <b>Note: Only compatible with Chrome browsers.</b>
+  </p>
+
   <button id="flashBtn">Flash STM32</button>
 
   <div id="progressContainer">
@@ -32,6 +72,21 @@
   </div>
 
   <pre id="log"></pre>
+
+  <!-- Disclaimer -->
+  <p class="text">
+    Disclaimer: This tool is provided “as is” without warranty of any kind. 
+    Cyborg Dynamics Engineering assumes no liability or responsibility for any 
+    damages or issues arising from its use. Use at your own risk.
+  </p>
+
+  <style>
+    .text {
+      margin-top: 1em;
+      text-align: left;    /* left-align text */
+      max-width: 35em;
+    }
+  </style>
 
   <!-- Load dependencies -->
   <script src="dfu.js"></script>
