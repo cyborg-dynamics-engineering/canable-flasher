@@ -65,15 +65,15 @@
 
         // If STM32 DfuSe, get memory map and max upload size
         let uploadSize;
-        if (device.memoryInfo) {
-          const segment = device.getFirstWritableSegment();
-          if (segment) {
-            uploadSize = device.getMaxReadSize(segment.start);
-            device.startAddress = segment.start;
-            logInfo(`Flash segment: ${segment.name}, size ${uploadSize} bytes`);
-          }
+        if (!device.memoryInfo) {
+          device.startAddress = 0x08000000;
+          logInfo("Forcing start address 0x08000000");
+
+          // Use base dfu.Device implementation
+          await dfu.Device.prototype.do_download.call(device, transferSize, firmware, true, 2);
         } else {
-          device.startAddress = 0x08000000; // Force STM32 flash base
+          // Normal dfuse implementation
+          await device.do_download(transferSize, firmware, true);
         }
 
         // Fetch firmware
