@@ -8,14 +8,14 @@
   <h2>STM32 DFU One-Click Firmware Update</h2>
   <button id="flashBtn">Flash STM32</button>
 
-  <!-- Include dependencies from the webdfu repo -->
-  <script src="dfuse.js"></script>
+  <!-- Load dependencies (order matters) -->
   <script src="dfu.js"></script>
+  <script src="dfuse.js"></script>
   <script src="dfu-util.js"></script>
 
   <script>
     const deviceFilters = [
-      { vendorId: 0x0483, productId: 0xDF11 }
+      { vendorId: 0x0483, productId: 0xDF11 } // STM32 DFU
     ];
 
     async function getFirmware(url) {
@@ -26,20 +26,21 @@
 
     document.getElementById("flashBtn").addEventListener("click", async () => {
       try {
-        const device = await navigator.usb.requestDevice({ filters: deviceFilters });
+        // Ask Chrome for the STM32 DFU device
+        const selectedDevice = await navigator.usb.requestDevice({ filters: deviceFilters });
+        const interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
+        if (interfaces.length === 0) {
+          throw new Error("No DFU interfaces found");
+        }
+
+        // Wrap as dfu.Device (or dfuse.Device if STM32 DfuSe)
+        const device = new dfu.Device(selectedDevice, interfaces[0]);
         await device.open();
 
-        if (device.configuration === null) {
-          await device.selectConfiguration(1);
-        }
-        await device.claimInterface(0);
-
-        // WebDFU comes from dfu-util.js
-        const dfu = new WebDFU(device, { forceInterfacesName: true });
-        await dfu.init();
-
+        // Download firmware
         const firmware = await getFirmware("firmware/latest.bin");
-        await dfu.do_download(0x08000000, firmware);
+        const transferSize = 1024;  // typical max transfer size
+        await device.do_download(transferSize, firmware, true);
 
         alert("✅ Flashing complete!");
       } catch (err) {
